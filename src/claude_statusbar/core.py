@@ -1377,14 +1377,14 @@ def main(json_output: bool = False,
                              },
                 }))
             else:
-                # Append context window usage to model name: Opus 4.6(10k/1M)
+                # Context window usage now renders as its own bar+fraction
+                # segment (built in progress.py), not appended to the model name.
                 ctx_pct, ctx_size, ctx_used = _context_window_usage(
                     stdin_data, env=_effective_env)
                 if ctx_size > 0:
                     # Strip redundant size suffix like "(1M context)" from display_name
                     import re as _re
                     model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
-                    model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
                 countdown = get_countdown_emoji(minutes_to_reset)
 
@@ -1432,7 +1432,7 @@ def main(json_output: bool = False,
                     critical_threshold=critical_threshold,
                     countdown_emoji=countdown,
                     density=cfg.density, show_weekly=cfg.show_weekly,
-                    ctx_pct=ctx_pct,
+                    ctx_pct=ctx_pct, ctx_used=ctx_used, ctx_size=ctx_size,
                     shimmer_phase=shimmer_phase,
                     **projection_kwargs,
                     **forecast_kwargs,

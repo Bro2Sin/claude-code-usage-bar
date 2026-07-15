@@ -467,7 +467,7 @@ def _format_model(model, severity_color, mute_color, use_color):
 def format_status_line(
     msgs_pct, tkns_pct, reset_time, model,
     weekly_pct=None, reset_time_7d="",
-    ctx_pct=None,
+    ctx_pct=None, ctx_used=None, ctx_size=None,
     bypass=False, use_color=True,
     countdown_emoji="",
     warning_threshold=None, critical_threshold=None,
@@ -573,12 +573,13 @@ def format_status_line(
         separator = colorize(" | ", mute, use_color)
         return separator.join(parts)
 
-    # 5h/7d severity follows the projection (where usage is HEADED), falling
-    # back to current usage before a projection exists. The bar fill LENGTH and
-    # the printed % still reflect current usage — only the color is projected.
-    rgb_5h = window_severity_rgb(msgs_pct, projection_5h, theme,
+    # 5h/7d severity follows CURRENT usage only. (Projection-driven color was
+    # confusing: a bar could show red at 15% because the forecast predicted
+    # hitting the cap later. The forecast still prints as a "→NN%" chip next
+    # to the bar — it just no longer drives the fill/label color.)
+    rgb_5h = window_severity_rgb(msgs_pct, "", theme,
                                  warning_threshold, critical_threshold)
-    rgb_7d = window_severity_rgb(weekly_pct, projection_7d, theme,
+    rgb_7d = window_severity_rgb(weekly_pct, "", theme,
                                  warning_threshold, critical_threshold)
     color_5h = _fg(rgb_5h) if rgb_5h is not None else mute
     color_7d = _fg(rgb_7d) if rgb_7d is not None else mute
@@ -586,7 +587,7 @@ def format_status_line(
     dim_5h = _build_dimension("5h", msgs_pct, color_5h, use_color,
                               warning_threshold, critical_threshold, theme,
                               shimmer_phase=shimmer_phase, fill_rgb=rgb_5h)
-    dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", color_5h, use_color)
+    dim_5h += colorize(f"{reset_time}{countdown_emoji}", color_5h, use_color)
     if projection_5h:
         dim_5h += " " + _render_projection(projection_5h, theme, use_color)
     # The legacy average-pace forecast (`⚠~25m`) and the projection chip are
@@ -603,7 +604,7 @@ def format_status_line(
                               warning_threshold, critical_threshold, theme,
                               shimmer_phase=shimmer_phase, fill_rgb=rgb_7d)
     if reset_time_7d:
-        dim_7d += colorize(f"⏰{reset_time_7d}", color_7d, use_color)
+        dim_7d += colorize(f"{reset_time_7d}", color_7d, use_color)
     if projection_7d:
         dim_7d += " " + _render_projection(projection_7d, theme, use_color)
     if forecast_7d and projection_pct(projection_7d) is None:
@@ -622,7 +623,32 @@ def format_status_line(
             warning_threshold=CONTEXT_WARNING_THRESHOLD,
             critical_threshold=CONTEXT_CRITICAL_THRESHOLD,
         )
-    parts.append(_format_model(model, model_color, mute, use_color))
+    model_part = _format_model(model, model_color, mute, use_color)
+
+    if ctx_pct is not None:
+        ctx_fill_rgb = (
+            theme.s_hot if ctx_pct >= CONTEXT_CRITICAL_THRESHOLD
+            else theme.s_warn if ctx_pct >= CONTEXT_WARNING_THRESHOLD
+            else theme.s_ok
+        )
+        ctx_color = _fg(ctx_fill_rgb)
+        ctx_bar = build_battery_bar(
+            ctx_pct, use_color=use_color, theme=theme,
+            warning_threshold=CONTEXT_WARNING_THRESHOLD,
+            critical_threshold=CONTEXT_CRITICAL_THRESHOLD,
+            shimmer_phase=shimmer_phase, seed=_field_seed("ctx"),
+            fill_rgb=ctx_fill_rgb,
+        )
+        # No "ctx" label — model name, then [bar], then (used/size), glued together.
+        model_part += colorize("[", mute, use_color) + ctx_bar + colorize("]", mute, use_color)
+        if ctx_size:
+            from .core import format_number as _format_number
+            model_part += colorize(
+                f"({_format_number(ctx_used)}/{_format_number(ctx_size)})",
+                ctx_color, use_color,
+            )
+
+    parts.append(model_part)
 
     if cost_text:
         parts.append(colorize(f"$ {cost_text}", ink, use_color))
